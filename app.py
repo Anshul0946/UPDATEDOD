@@ -24,8 +24,8 @@ from PIL import Image
 
 # ---------------- Configuration ----------------
 API_BASE = "https://openrouter.apify.actor/api/v1"
-MODEL_SERVICE_DEFAULT = "x-ai/grok-4.1-fast"
-MODEL_GENERIC_DEFAULT = "x-ai/grok-4.1-fast"
+MODEL_SERVICE_DEFAULT = "google/gemini-2.5-pro"
+MODEL_GENERIC_DEFAULT = "google/gemini-2.5-flash"
 
 # ---------------- Schemas ----------------
 SERVICE_SCHEMA = {
@@ -324,6 +324,31 @@ def log_append(log_placeholder, logs_list: list, msg: str):
         print(line)
 
 
+def get_optimized_base64_image(image_path: str, max_size=(1024, 1024), quality=85) -> str:
+    """
+    Reads an image, converts to RGB (JPEG compatible), resizes it if too large,
+    and returns the base64 string of the compressed JPEG.
+    """
+    try:
+        with Image.open(image_path) as img:
+            # Convert to RGB to ensure JPEG compatibility (removes alpha channel if present)
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+            
+            # Resize if larger than max_size, keeping aspect ratio
+            img.thumbnail(max_size, Image.Resampling.LANCZOS)
+            
+            # Save to buffer as JPEG
+            buffer = io.BytesIO()
+            img.save(buffer, format="JPEG", quality=quality)
+            return base64.b64encode(buffer.getvalue()).decode("utf-8")
+    except Exception as e:
+        # Fallback to original method if optimization fails
+        print(f"Image optimization failed: {e}")
+        with open(image_path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+
+
 def get_sector_from_col(col_index: int) -> str:
     if 0 <= col_index < 4:
         return "alpha"
@@ -415,10 +440,9 @@ def process_service_images(token: str, image1_path: str, image2_path: str, model
     sector = Path(image1_path).stem.split("_")[0]
     log_append(log_placeholder, logs, f"[LOG] Starting service extraction for '{sector}' using {model_name}")
     try:
-        with open(image1_path, "rb") as f:
-            b1 = base64.b64encode(f.read()).decode("utf-8")
-        with open(image2_path, "rb") as f:
-            b2 = base64.b64encode(f.read()).decode("utf-8")
+        b1 = get_optimized_base64_image(image1_path)
+        b2 = get_optimized_base64_image(image2_path)
+        
     except Exception as e:
         log_append(log_placeholder, logs, f"[ERROR] Could not read/encode service images: {e}")
         return None
@@ -467,8 +491,7 @@ def analyze_generic_image(token: str, image_path: str, model_name: str, log_plac
     image_name = Path(image_path).name
     log_append(log_placeholder, logs, f"[LOG] Starting generic extraction for '{image_name}' using {model_name}")
     try:
-        with open(image_path, "rb") as f:
-            b = base64.b64encode(f.read()).decode("utf-8")
+        b = get_optimized_base64_image(image_path)
     except Exception as e:
         log_append(log_placeholder, logs, f"[ERROR] Could not read/encode image '{image_name}': {e}")
         return None
@@ -516,8 +539,7 @@ def analyze_voice_image(token: str, image_path: str, model_name: str, log_placeh
     image_name = Path(image_path).name
     log_append(log_placeholder, logs, f"[VOICE] Starting voice extraction for '{image_name}'")
     try:
-        with open(image_path, "rb") as f:
-            b = base64.b64encode(f.read()).decode("utf-8")
+        b = get_optimized_base64_image(image_path)
     except Exception as e:
         log_append(log_placeholder, logs, f"[VOICE ERROR] Could not read/encode: {e}")
         return None
@@ -570,10 +592,8 @@ def evaluate_service_images(token: str, image1_path: str, image2_path: str, mode
     sector = Path(image1_path).stem.split("_")[0] if image1_path else "unknown"
     log_append(log_placeholder, logs, f"[EVAL] Re-evaluating service images for '{sector}' (careful)")
     try:
-        with open(image1_path, "rb") as f:
-            b1 = base64.b64encode(f.read()).decode("utf-8")
-        with open(image2_path, "rb") as f:
-            b2 = base64.b64encode(f.read()).decode("utf-8")
+        b1 = get_optimized_base64_image(image1_path)
+        b2 = get_optimized_base64_image(image2_path)
     except Exception as e:
         log_append(log_placeholder, logs, f"[EVAL ERROR] Could not read/encode images: {e}")
         return None
@@ -619,8 +639,7 @@ def evaluate_generic_image(token: str, image_path: str, model_name: str, log_pla
     image_name = Path(image_path).name
     log_append(log_placeholder, logs, f"[EVAL] Re-evaluating '{image_name}' (careful)")
     try:
-        with open(image_path, "rb") as f:
-            b = base64.b64encode(f.read()).decode("utf-8")
+        b = get_optimized_base64_image(image_path)
     except Exception as e:
         log_append(log_placeholder, logs, f"[EVAL ERROR] Could not read/encode '{image_name}': {e}")
         return None
